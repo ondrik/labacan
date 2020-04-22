@@ -1,7 +1,7 @@
 -- TODO: missing header
 module Logic where
 
--- import Data.List
+import Data.List (intercalate)
 
 ----------------------------------- VOCABULARY ---------------------------------
 -- variable names
@@ -34,10 +34,7 @@ showFuncOrPred :: Show a => String
                          -> [a]
                          -> String
 showFuncOrPred name xs = name ++ "(" ++ str ++ ")"
-  where str = case xs of
-              []   -> ""
-              [x]  -> show x
-              y:ys -> show y ++ (foldl (\l r -> l ++ ", " ++ show r) "" ys)
+  where str = intercalate ", " $ map (\e -> show e) xs
 
 instance Show Term where
   show = showTerm
