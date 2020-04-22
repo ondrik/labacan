@@ -1,7 +1,7 @@
 -- TODO: missing header
 module TPTPParser where
 
-import Control.Applicative ((<*))
+import Control.Applicative ((<*), (<|>))
 
 -- import Data.List
 --
@@ -20,15 +20,16 @@ import qualified Logic
 
 ------------------------------- DATA STRUCTURES ------------------------------
 -- representation of a TPTP file
-data TPTPFile = TPTPFile { tf_problems :: [TPTPLine] }
-type TPTPLine =  String
+newtype TPTPFile = TPTPFile [AnnotatedFormula]
 
-type AnnotFormula = String
-
+data AnnotatedFormula
+  -- |     name   role   formula
+  = AF_FOF String String String
+  deriving (Show)
 
 
 instance Show TPTPFile where
-  show f = ((unlines . (map (\x -> (show x) ++ ";"))) (tf_problems f))
+  show (TPTPFile fs) = ((unlines . (map (\x -> (show x) ++ ";"))) fs)
 
 
 ----------------------------- TOP-LEVEL FUNCTINOS -----------------------------
@@ -466,9 +467,18 @@ formula = m_identifier
 annotations :: P.Parser String
 annotations = P.many $ P.noneOf ")"
 
+-- fragment
+fragment :: P.Parser String
+fragment = P.string "fof"
+       <|> P.string "tpi"
+       <|> P.string "thf"
+       <|> P.string "tff"
+       <|> P.string "tcf"
+       <|> P.string "cnf"
+
 -- parser an annotated formula
-annotFormParser :: P.Parser AnnotFormula
-annotFormParser = do { form_type <- m_identifier
+annotFormParser :: P.Parser AnnotatedFormula
+annotFormParser = do { form_type <- fragment
                      ; P.char '('
                      ; name <- m_identifier    -- TODO: can also be integer or single-quoted
                      ; m_comma
@@ -476,18 +486,17 @@ annotFormParser = do { form_type <- m_identifier
                      ; m_comma
                      ; form <- formula
                      -- ; annotations
-                     ; (P.optional (P.char ',' *> annotations )
+                     ; (P.optional (P.char ',' *> annotations ))
                      ; P.char ')'
                      ; m_dot
-                     ; return form
+                     ; return $ if form_type == "fof" then AF_FOF name role form else error "Unsupported"
                      }
-
 
 -- parses a TPTP file
 tptpFileParser :: P.Parser TPTPFile
 tptpFileParser = do { m_whiteSpace
                     -- ; formulae <- P.many (annotFormParser <* m_dot)
                     ; formulae <- P.many (annotFormParser)
-                    ; return TPTPFile{tf_problems = formulae}
+                    ; return $ TPTPFile formulae
                     }
-              <* P.eof
+                 <* P.eof
