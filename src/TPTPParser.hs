@@ -1,15 +1,15 @@
 -- TODO: missing header
 module TPTPParser where
 
-import Control.Applicative ((<*), (<|>))
+import Control.Applicative ((<*))
 
 -- import Data.List
 --
 import qualified Text.Parsec as P
 -- import Text.Parsec.Char
--- import Text.Parsec.Expr
+import Text.Parsec.Expr as P
 import Text.Parsec.Language as P
--- import Text.Parsec.Prim
+import Text.Parsec.Prim as P
 import qualified Text.Parsec.String as P
 import qualified Text.Parsec.Token as P
 
@@ -22,11 +22,35 @@ import qualified Logic
 -- representation of a TPTP file
 newtype TPTPFile = TPTPFile [AnnotatedFormula]
 
+-- formula with name, role, and annotations
 data AnnotatedFormula
   -- |     name   role   formula
-  = AF_FOF String String String
+  = AF_FOF String String FOFormula
   deriving (Show)
 
+-- variable
+type Var = String
+
+-- first-order formula
+data FOFormula
+  = FOPred     String [FOTerm]
+  | FONot      FOFormula
+  | FOAnd      FOFormula FOFormula
+  | FOOr       FOFormula FOFormula
+  | FONand     FOFormula FOFormula
+  | FONor      FOFormula FOFormula
+  | FOImplLR   FOFormula FOFormula
+  | FOImplRL   FOFormula FOFormula
+  | FOEquiv    FOFormula FOFormula
+  | FONonEquiv FOFormula FOFormula
+  | FOForAll   [Var]     FOFormula
+  | FOExists   [Var]     FOFormula
+  deriving (Show)
+
+-- first-order term
+data FOTerm
+  = FOTerm String [FOTerm]
+  deriving (Show)
 
 instance Show TPTPFile where
   show (TPTPFile fs) = ((unlines . (map (\x -> (show x) ++ ";"))) fs)
@@ -56,94 +80,46 @@ test = do
 langDef = P.emptyDef{ P.commentStart = "/*"
                     , P.commentEnd = "*/"
                     , P.commentLine = "%"
-                    }
+                    , P.caseSensitive = True
+                    , P.reservedOpNames =
+                      [ "~"     -- NOT
+                      , "&"     -- AND
+                      , "|"     -- OR
+                      , "~&"    -- NAND
+                      , "~|"    -- NOR
+                      , "=>"    -- IMPLIES LEFT2RIGHT
+                      , "<="    -- IMPLIES RIGHT2LEFT
+                      , "<=>"   -- EQUIV
+                      , "<~>"   -- NONEQUIV
+                      , "!"     -- UNIVERSAL QUANTIFIER
+                      , "?"     -- EXISTENTIAL QUANTIFIER
+                      , "="     -- EQUALS
+                      , "!="    -- NEQUALS
+                      ]
 --               , nestedComments = False
---               , caseSensitive = True
 --               , identStart = letter <|> char '_' <|> char '$' <|> char '\''
 --               , identLetter = alphaNum <|> char '_' <|> char '$' <|> char '\''
 --               , opStart = oneOf "~&:|<=>+-,\"\\^"
 --               , opLetter = oneOf "~&:|<=>+-,\"\\^"
---               , reservedOpNames =
---                 [ "~"     -- NOT
---                 , "&"     -- AND
---                 , "|"     -- OR
---                 , "=>"    -- IMPLIES
---                 , "<=>"   -- EQUIV
---                 , "="     -- EQUALS
---                 , "~="    -- NEQUALS
---                 , "<"     -- LT
---                 , "<="    -- LEQ
---                 , ">"     -- GT
---                 , ">="    -- GEQ
---                 , "+"     -- PLUS
---                 , "-"     -- MINUS
---                 , ":"     --
---                 , ","     --
---                 ]
 --               , reservedNames =
 --                 [ "ex0"
 --                 , "ex1"
---                 , "ex2"
---                 , "all0"
---                 , "all1"
---                 , "all2"
---                 , "var0"
---                 , "var1"
---                 , "var2"
---                 , "let0"
---                 , "let1"
---                 , "let2"
---                 , "sub"
---                 , "in"
---                 , "notin"
---                 , "true"
---                 , "false"
---                 , "macro"
---                 , "pred"
---                 , "allpos"
---                 , "type"
---                 , "ws1s"
---                 , "ws2s"
---                 , "m2l-str"
---                 , "m2l-tree"
---                 , "where"
---                 , "export"
---                 , "import"
---                 , "restrict"
---                 , "empty"
---                 , "prefix"
---                 , "root"
---                 , "variant"
---                 , "type"
---                 , "in_state_space"
---                 , "tree"
---                 , "sometype"
---                 , "min"
---                 , "max"
---                 , "pconst"
---                 , "union"
---                 , "inter"
---                 , "tree_root"
---                 , "succ"
---                 , "const_tree"
---                 , "universe"
---                 , "guide"
---                 , "include"
---                 , "execute"
---                 , "const"
 --                 ]
 --               }
+                  }
 
 
 -- generate parsers for tokens
 P.TokenParser{ P.parens = m_parens
+             , P.brackets = m_brackets
              , P.dot = m_dot
              , P.comma = m_comma
+             , P.colon = m_colon
+             , P.commaSep1 = m_commaSep1
              , P.identifier = m_identifier
-             -- , reservedOp = m_reservedOp
+             , P.reservedOp = m_reservedOp
              -- , reserved = m_reserved
              -- , commaSep = m_commaSep
-             -- , commaSep1 = m_commaSep1
              -- , semi = m_semi
              -- , semiSep1 = m_semiSep1
              -- , natural = m_natural
@@ -157,17 +133,6 @@ P.TokenParser{ P.parens = m_parens
 --   | MonaTermConst Integer
 --   | MonaTermPlus MonaTerm MonaTerm
 --   | MonaTermMinus MonaTerm MonaTerm
---
--- instance Show MonaTerm where
---   show (MonaTermVar str) = str
---   show (MonaTermConst n) = show n
---   show (MonaTermPlus t1 t2) = (pars $ show t1) ++ " + " ++ (pars $ show t2)
---   show (MonaTermMinus t1 t2) = (pars $ show t1) ++ " - " ++ (pars $ show t2)
---
---
--- -- put something inside parenthesis
--- pars :: String -> String
--- pars str = "(" ++ str ++ ")"
 --
 --
 -- -- parses terms
@@ -186,11 +151,6 @@ P.TokenParser{ P.parens = m_parens
 --     <|> fmap MonaTermConst m_natural
 --
 --
--- -- sanitizes terms
--- sanitizeTerm :: MonaTerm -> MonaTerm
--- sanitizeTerm = error "Unimplemented"
---
---
 -- -- formulae in MONA
 -- data MonaFormula
 --   = MonaFormulaAtomic String           -- TODO: needs to be refined
@@ -207,28 +167,6 @@ P.TokenParser{ P.parens = m_parens
 --   | MonaFormulaAll1 [(String, Maybe MonaFormula)] MonaFormula
 --   | MonaFormulaAll2 [(String, Maybe MonaFormula)] MonaFormula
 --   | MonaFormulaPredCall String [MonaTerm]
---
--- instance Show MonaFormula where
---   show (MonaFormulaAtomic str) = str
---   show (MonaFormulaVar str) = str
---   show (MonaFormulaNeg phi) = "~" ++ (show phi)
---   show (MonaFormulaDisj f1 f2) = (show f1) ++ " | " ++ (show f2)
---   show (MonaFormulaConj f1 f2) = (show f1) ++ " & " ++ (show f2)
---   show (MonaFormulaImpl f1 f2) = (show f1) ++ " => " ++ (show f2)
---   show (MonaFormulaEquiv f1 f2) = (show f1) ++ " <=> " ++ (show f2)
---   show (MonaFormulaEx0 varList phi) =
---     "ex0 " ++ (unwords varList) ++ ": " ++ (show phi)
---   show (MonaFormulaEx1 varWhereCl phi) =
---     "ex1 " ++ (showVarWhereClause varWhereCl) ++ ": " ++ (show phi)
---   show (MonaFormulaEx2 varWhereCl phi) =
---     "ex2 " ++ (showVarWhereClause varWhereCl) ++ ": " ++ (show phi)
---   show (MonaFormulaAll0 varList phi) =
---     "all0 " ++ (unwords varList) ++ ": " ++ (show phi)
---   show (MonaFormulaAll1 varWhereCl phi) =
---     "all1 " ++ (showVarWhereClause varWhereCl) ++ ": " ++ (show phi)
---   show (MonaFormulaAll2 varWhereCl phi) =
---     "all2 " ++ (showVarWhereClause varWhereCl) ++ ": " ++ (show phi)
---   show (MonaFormulaPredCall name terms) = name ++ "(" ++ (show terms) ++ ")"
 --
 --
 -- -- parses a binary atom
@@ -360,30 +298,6 @@ P.TokenParser{ P.parens = m_parens
 --                        ; varList <- m_commaSep1 m_identifier
 --                        ; return (MonaDeclVar0 varList)
 --                        }
---                 <|> do { m_reserved "var1"
---                        ; varWhereList <- m_commaSep1 varWhereParser
---                        ; return (MonaDeclVar1 varWhereList)
---                        }
---                 <|> do { m_reserved "var2"
---                        ; varWhereList <- m_commaSep1 varWhereParser
---                        ; return (MonaDeclVar2 varWhereList)
---                        }
---                 <|> do { m_reserved "allpos"
---                        ; varname <- m_identifier
---                        ; return (MonaDeclAllpos varname)
---                        }
---                 <|> do { m_reserved "defaultwhere1"
---                        ; varname <- m_parens m_identifier
---                        ; m_reservedOp "="
---                        ; phi <- formulaParser
---                        ; return (MonaDeclDefWhere1 varname phi)
---                        }
---                 <|> do { m_reserved "defaultwhere2"
---                        ; varname <- m_parens m_identifier
---                        ; m_reservedOp "="
---                        ; phi <- formulaParser
---                        ; return (MonaDeclDefWhere2 varname phi)
---                        }
 --                 <|> do { m_reserved "macro"
 --                        ; name <- m_identifier
 --                        ; args <- optionMaybe (m_parens $ m_commaSep paramParser)
@@ -415,12 +329,6 @@ P.TokenParser{ P.parens = m_parens
 --   | MonaMacroParamVar1 [(String, Maybe MonaFormula)]
 --   | MonaMacroParamVar2 [(String, Maybe MonaFormula)]
 --   | MonaMacroParamUniv String
---
--- instance Show MonaMacroParam where
---   show (MonaMacroParamVar0 varList) = "var0 " ++ (commatize varList)
---   show (MonaMacroParamVar1 varWhereList) = "var1 " ++ (showVarWhereClause varWhereList)
---   show (MonaMacroParamVar2 varWhereList) = "var2 " ++ (showVarWhereClause varWhereList)
---
 --
 -- -- parses macro/pred parameters
 -- paramParser :: Parser MonaMacroParam
@@ -454,14 +362,41 @@ P.TokenParser{ P.parens = m_parens
 --            <|> (m_reserved "m2l-tree" >> return "m2l-tree")
 --
 
--- lower-case word
-lower_word :: P.Parser String
-lower_word = P.many1 P.lower
 
--- formula
-formula :: P.Parser String
--- formula = P.anyToken `P.endBy` m_comma
-formula = m_identifier
+alpha_numeric :: P.Parser Char
+alpha_numeric = P.lower
+            <|> P.upper
+            <|> P.digit
+            <|> P.char '_'
+
+-- word starting with a given parser
+word_starting_with :: P.Parser Char -> P.Parser String
+word_starting_with p = do { first <- p
+                          ; rest <- P.many $ alpha_numeric
+                          ; return $ first:rest
+                          }
+
+-- word starting with upper-case character
+upper_word :: P.Parser String
+upper_word = word_starting_with P.upper
+
+-- word starting with lower-case character
+lower_word :: P.Parser String
+lower_word = word_starting_with P.lower
+
+-- atomic word
+atomic_word :: P.Parser String
+atomic_word = lower_word
+          -- <|> single_quoted
+
+-- single quoted string
+single_quoted :: P.Parser String
+single_quoted = error "Unimplemented"
+                -- do { char '\''
+                --    ; 
+                --    ; char '\''
+                --    ; return 
+                --    }
 
 -- annotations
 annotations :: P.Parser String
@@ -475,6 +410,73 @@ fragment = P.string "fof"
        <|> P.string "tff"
        <|> P.string "tcf"
        <|> P.string "cnf"
+
+-- variable
+variable :: P.Parser String
+variable = upper_word
+
+-- quantified formula
+quantifiedFormula :: P.Parser FOFormula
+quantifiedFormula = do { quant <- P.oneOf "?!"
+                       ; vars <- (m_brackets $ m_commaSep1 variable)
+                       ; m_colon
+                       ; form <- formula
+                       ; return $ if quant == '?' then FOExists vars form else FOForAll vars form
+                       }
+
+-- parses formulae
+formula :: P.Parser FOFormula
+formula = P.buildExpressionParser formulaOpTable formulaTerm <?> "formula"
+  where formulaOpTable = [ [ Prefix (m_reservedOp "~"   >> return FONot)                 ]
+                         , [ Infix  (m_reservedOp "&"   >> return FOAnd)      AssocLeft  ]
+                         , [ Infix  (m_reservedOp "|"   >> return FOOr)       AssocLeft  ]
+                         , [ Infix  (m_reservedOp "~&"  >> return FONand)     AssocLeft  ]
+                         , [ Infix  (m_reservedOp "~|"  >> return FONor)      AssocLeft  ]
+                         , [ Infix  (m_reservedOp "=>"  >> return FOImplLR)   AssocRight ]
+                         , [ Infix  (m_reservedOp "<="  >> return FOImplRL)   AssocLeft  ]
+                         , [ Infix  (m_reservedOp "<=>" >> return FOEquiv)    AssocRight ]
+                         , [ Infix  (m_reservedOp "<~>" >> return FONonEquiv) AssocRight ]
+                         ]
+
+-- a formula term
+formulaTerm :: P.Parser FOFormula
+formulaTerm = m_parens formula
+          <|> quantifiedFormula
+          <|> atomicFormula
+
+-- functor names
+functor :: P.Parser String
+functor = atomic_word
+
+-- first-order plain term
+fof_plain_term :: P.Parser (String, [FOTerm])
+fof_plain_term = do { fnc <- functor
+                    ; trms <- P.option [] (m_parens (P.many term))
+                    ; return (fnc, trms)
+                    }
+
+-- atomic formula
+atomicFormula :: P.Parser FOFormula
+atomicFormula = do { (prd, trms) <- fof_plain_term
+                   ; return $ FOPred prd trms
+                   }
+            <|> do { lhs <- term
+                   ; m_reservedOp "="
+                   ; rhs <- term
+                   ; return $ FOPred "=" [lhs, rhs]
+                   }
+            <|> do { lhs <- term
+                   ; m_reservedOp "!="
+                   ; rhs <- term
+                   ; return $ FOPred "!=" [lhs, rhs]
+                   }
+            <?> "atomic formula"
+
+-- terms
+term :: P.Parser FOTerm
+term = do { (fnc, trms) <- fof_plain_term
+          ; return $ FOTerm fnc trms
+          }
 
 -- parser an annotated formula
 annotFormParser :: P.Parser AnnotatedFormula
