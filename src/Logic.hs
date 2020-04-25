@@ -33,8 +33,8 @@ data Formula = Pred PredSymb [Term]
 showFuncOrPred :: Show a => String
                          -> [a]
                          -> String
-showFuncOrPred name xs = name ++ "(" ++ str ++ ")"
-  where str = intercalate ", " $ map (\e -> show e) xs
+showFuncOrPred name ls = name ++ "(" ++ str ++ ")"
+  where str = intercalate ", " $ map show ls
 
 instance Show Term where
   show = showTerm
@@ -42,14 +42,14 @@ instance Show Term where
 -- prints the term in human-readable format
 showTerm :: Term -> String
 showTerm (Var xname)             = xname
-showTerm (Func (FuncSymb fs) xs) = showFuncOrPred fs xs
+showTerm (Func (FuncSymb fs) ls) = showFuncOrPred fs ls
 
 instance Show Formula where
   show = showFormula
 
 -- prints the formula in human-readable format
 showFormula :: Formula -> String
-showFormula (Pred (PredSymb ps) xs) = showFuncOrPred ps xs
+showFormula (Pred (PredSymb ps) ls) = showFuncOrPred ps ls
 showFormula (Disj f1 f2)            = "(" ++ (showFormula f1) ++ ") ∨ (" ++ (showFormula f2) ++ ")"
 showFormula (Conj f1 f2)            = "(" ++ (showFormula f1) ++ ") ∧ (" ++ (showFormula f2) ++ ")"
 showFormula (Neg f)                 = "¬(" ++ (showFormula f) ++ ")"
