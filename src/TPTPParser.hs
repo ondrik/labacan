@@ -69,18 +69,20 @@ parseString :: String -> TPTPFile
 parseString str = case (P.parse tptpFileParser "TPTP parser" str) of
   Left err   -> error $ show err
   Right res  -> res
--- parseString str = TPTPFile []
 
 
-test :: IO String
+test :: IO ()
 test = do
   tptp_file <- parseFile "../PUZ001+1.p"
-  return $ show tptp_file
+  -- tptp_file <- parseFile "test/test1.p"
+  putStr $ show tptp_file
 
 langDef = P.emptyDef{ P.commentStart = "/*"
                     , P.commentEnd = "*/"
                     , P.commentLine = "%"
                     , P.caseSensitive = True
+                    , P.opStart =  P.oneOf "~&|<=>!?+-,:"
+                    , P.opLetter = P.oneOf "~&|<=>!?+-,:"
                     , P.reservedOpNames =
                       [ "~"     -- NOT
                       , "&"     -- AND
@@ -95,6 +97,7 @@ langDef = P.emptyDef{ P.commentStart = "/*"
                       , "?"     -- EXISTENTIAL QUANTIFIER
                       , "="     -- EQUALS
                       , "!="    -- NEQUALS
+                      , ":"     -- COLON IN QUANTIFICATION
                       ]
 --               , nestedComments = False
 --               , identStart = letter <|> char '_' <|> char '$' <|> char '\''
@@ -116,8 +119,8 @@ P.TokenParser{ P.parens = m_parens
              , P.comma = m_comma
              , P.colon = m_colon
              , P.commaSep1 = m_commaSep1
-             , P.identifier = m_identifier
              , P.reservedOp = m_reservedOp
+             , P.lexeme = m_lexeme
              -- , reserved = m_reserved
              -- , commaSep = m_commaSep
              -- , semi = m_semi
@@ -372,9 +375,10 @@ alpha_numeric = P.lower
 -- word starting with a given parser
 word_starting_with :: P.Parser Char -> P.Parser String
 word_starting_with p = do { first <- p
-                          ; rest <- P.many $ alpha_numeric
+                          ; rest <- m_lexeme $ P.many alpha_numeric
                           ; return $ first:rest
                           }
+                   <?> "word_starting_with"
 
 -- word starting with upper-case character
 upper_word :: P.Parser String
@@ -398,9 +402,14 @@ single_quoted = error "Unimplemented"
                 --    ; return 
                 --    }
 
+-- functor names
+functor :: P.Parser String
+functor = atomic_word
+
+
 -- annotations
 annotations :: P.Parser String
-annotations = P.many $ P.noneOf ")"
+annotations = m_lexeme (P.many $ P.noneOf ")")
 
 -- fragment
 fragment :: P.Parser String
@@ -415,60 +424,102 @@ fragment = P.string "fof"
 variable :: P.Parser String
 variable = upper_word
 
--- quantified formula
-quantifiedFormula :: P.Parser FOFormula
-quantifiedFormula = do { quant <- P.oneOf "?!"
-                       ; vars <- (m_brackets $ m_commaSep1 variable)
-                       ; m_colon
-                       ; form <- formula
-                       ; return $ if quant == '?' then FOExists vars form else FOForAll vars form
-                       }
 
--- parses formulae
+-- parses formulae (needed to make my own since Parsec's buildExpressionParser
+-- has problems with two associative operators with the same priority: '&' and
+-- '|')
+-- GRAMMAR:
+-- <formula>     ->  <formulaTerm> "&" <andList> | <formulaTerm> "|" <orList> | <nonassoc> | <formulaTerm>
+-- <formulaTerm> ->  "(" <formula> ")" | <atomicFormula> | "~" <formulaTerm> | <quantifiedFormula>
+-- <quantified>  ->  ("?" | "!") "[" <variables> "]" ":" <formulaTerm>
+-- <andList>     ->  <formulaTerm> | <formulaTerm> "&" <andList>
+-- <orList>      ->  <formulaTerm> | <formulaTerm> "|" <orList>
+-- <nonassoc>    ->  <formulaTerm> (operator) <formulaTerm>
 formula :: P.Parser FOFormula
-formula = P.buildExpressionParser formulaOpTable formulaTerm <?> "formula"
-  where formulaOpTable = [ [ Prefix (m_reservedOp "~"   >> return FONot)                 ]
-                         , [ Infix  (m_reservedOp "&"   >> return FOAnd)      AssocLeft  ]
-                         , [ Infix  (m_reservedOp "|"   >> return FOOr)       AssocLeft  ]
-                         , [ Infix  (m_reservedOp "~&"  >> return FONand)     AssocLeft  ]
-                         , [ Infix  (m_reservedOp "~|"  >> return FONor)      AssocLeft  ]
-                         , [ Infix  (m_reservedOp "=>"  >> return FOImplLR)   AssocRight ]
-                         , [ Infix  (m_reservedOp "<="  >> return FOImplRL)   AssocLeft  ]
-                         , [ Infix  (m_reservedOp "<=>" >> return FOEquiv)    AssocRight ]
-                         , [ Infix  (m_reservedOp "<~>" >> return FONonEquiv) AssocRight ]
-                         ]
+formula = operListTop "&" FOAnd
+      <|> operListTop "|" FOOr
+      <|> nonassoc
+      <|> formulaTerm
+      <?> "formula"
 
--- a formula term
+nonassoc :: P.Parser FOFormula
+nonassoc = P.buildExpressionParser table formulaTerm <?> "nonassoc"
+  where table = [ [ binary "~&"  FONand     AssocNone
+                  , binary "~|"  FONor      AssocNone
+                  , binary "=>"  FOImplLR   AssocNone
+                  , binary "<="  FOImplRL   AssocNone
+                  , binary "<=>" FOEquiv    AssocNone
+                  , binary "<~>" FONonEquiv AssocNone
+                  ]
+                ]
+        binary name fun assoc = Infix  (m_reservedOp name >> return fun) assoc
+
+-- top nonterminal of an operator list
+operListTop :: String
+            -> (FOFormula -> FOFormula -> FOFormula)
+            -> P.Parser FOFormula
+operListTop op fun = (try $ do { hd <- formulaTerm
+                               ; m_reservedOp op
+                               ; tl <- operList op fun
+                               ; return $ fun hd tl
+                               })
+                 <?> "operListTop"
+
+-- generalizes andList and orList
+operList :: String
+         -> (FOFormula -> FOFormula -> FOFormula)
+         -> P.Parser FOFormula
+operList op fun = operListTop op fun
+              <|> formulaTerm
+              <?> "operList"
+
+-- formula term
 formulaTerm :: P.Parser FOFormula
 formulaTerm = m_parens formula
-          <|> quantifiedFormula
+          <|> do { m_reservedOp "~"
+                 ; form <- formulaTerm
+                 ; return $ FONot form
+                 }
+          <|> quantified
           <|> atomicFormula
+          <?> "formula term"
 
--- functor names
-functor :: P.Parser String
-functor = atomic_word
+-- quantified formula
+quantified :: P.Parser FOFormula
+quantified = do { quant <- P.oneOf "?!"
+                ; m_whiteSpace
+                ; vars <- (m_brackets $ m_commaSep1 variable)
+                ; m_colon
+                ; form <- formula
+                ; return $ if quant == '?' then FOExists vars form else FOForAll vars form
+                }
+         <?> "quantified"
 
 -- first-order plain term
 fof_plain_term :: P.Parser (String, [FOTerm])
-fof_plain_term = do { fnc <- functor
-                    ; trms <- P.option [] (m_parens (P.many term))
-                    ; return (fnc, trms)
+fof_plain_term = (try $ do { fnc <- functor
+                           ; trms <- P.option [] (m_parens (m_commaSep1 term))
+                           ; return (fnc, trms)
+                           })
+             <|> do { var <- variable
+                    ; return (var, [])
                     }
+             <?> "fof_plain_term"
 
 -- atomic formula
 atomicFormula :: P.Parser FOFormula
-atomicFormula = do { (prd, trms) <- fof_plain_term
+atomicFormula = (try $ do { lhs <- term
+                          ; m_reservedOp "="
+                          ; rhs <- term
+                          ; return $ FOPred "=" [lhs, rhs]
+                          })
+            <|> (try $ do { lhs <- term
+                          ; m_reservedOp "!="
+                          ; rhs <- term
+                          ; return $ FOPred "!=" [lhs, rhs]
+                          })
+            <|> do { (prd, trms) <- fof_plain_term
                    ; return $ FOPred prd trms
-                   }
-            <|> do { lhs <- term
-                   ; m_reservedOp "="
-                   ; rhs <- term
-                   ; return $ FOPred "=" [lhs, rhs]
-                   }
-            <|> do { lhs <- term
-                   ; m_reservedOp "!="
-                   ; rhs <- term
-                   ; return $ FOPred "!=" [lhs, rhs]
                    }
             <?> "atomic formula"
 
@@ -477,12 +528,13 @@ term :: P.Parser FOTerm
 term = do { (fnc, trms) <- fof_plain_term
           ; return $ FOTerm fnc trms
           }
+   <?> "term"
 
 -- parser an annotated formula
 annotFormParser :: P.Parser AnnotatedFormula
 annotFormParser = do { form_type <- fragment
                      ; P.char '('
-                     ; name <- m_identifier    -- TODO: can also be integer or single-quoted
+                     ; name <- atomic_word    -- TODO: can also be integer
                      ; m_comma
                      ; role <- lower_word
                      ; m_comma
