@@ -4,15 +4,15 @@ cabal-version:       >=1.10
 
 name:                labacan
 version:             0.1.0.0
--- synopsis:
--- description:
+synopsis:            An inefficient theorem prover
+description:         An inefficient lazy toy theorem prover
 -- bug-reports:
--- license:
+license:             GPL-3
 license-file:        LICENSE
 author:              Ondra Lengal
 maintainer:          ondra.lengal@gmail.com
 -- copyright:
--- category:
+category:            Logic
 build-type:          Simple
 extra-source-files:  CHANGELOG.md
 
@@ -20,6 +20,18 @@ executable labacan
   main-is:             Main.hs
   -- other-modules:
   -- other-extensions:
-  build-depends:       base >=4.13 && <4.14
+  build-depends:       base >= 4.13 && < 4.14
   -- hs-source-dirs:
   default-language:    Haskell2010
+
+test-suite test-labacan
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      tests
+  main-is:             TPTPParserTests.hs
+  default-language:    Haskell2010
+  build-depends:       base       >= 4.13 && < 4.14
+                      ,QuickCheck >=  2.8
+
+source-repository head
+  type:     git
+  location: https://github.com/ondrik/labacan.git

@@ -6,6 +6,7 @@ import Control.Exception (assert)
 
 import qualified Data.List as DL
 
+-- Parsec imports
 import qualified Text.Parsec as P
 import qualified Text.Parsec.Expr as P
 import qualified Text.Parsec.Language as P
@@ -13,11 +14,6 @@ import Text.Parsec.Prim ((<?>),(<|>))
 import qualified Text.Parsec.Prim as P
 import qualified Text.Parsec.String as P
 import qualified Text.Parsec.Token as P
-
-
-
--- definition of logic
-import qualified Logic
 
 ------------------------------- DATA STRUCTURES ------------------------------
 -- representation of a TPTP file
@@ -53,6 +49,7 @@ data FOFormula
   | FONonEquiv FOFormula FOFormula
   | FOForAll   [Var]     FOFormula
   | FOExists   [Var]     FOFormula
+  deriving Eq
 
 instance Show FOFormula where
   show (FOPred pred ls) =
@@ -62,17 +59,40 @@ instance Show FOFormula where
       _     -> pred ++ showArgs ls
     where showBinary op = assert (length ls == 2) $
             (show $ ls!!0) ++ " " ++ op ++ " " ++ (show $ ls!!1)
-  show (FONot      form)    = "~ (" ++ show form ++ ")"
-  show (FOAnd      lhs rhs) = "(" ++ show lhs ++ ") & (" ++ show rhs ++ ")"
-  show (FOOr       lhs rhs) = "(" ++ show lhs ++ ") | (" ++ show rhs ++ ")"
-  show (FONand     lhs rhs) = "(" ++ show lhs ++ ") ~& (" ++ show rhs ++ ")"
-  show (FONor      lhs rhs) = "(" ++ show lhs ++ ") ~| (" ++ show rhs ++ ")"
-  show (FOImplLR   lhs rhs) = "(" ++ show lhs ++ ") => (" ++ show rhs ++ ")"
-  show (FOImplRL   lhs rhs) = "(" ++ show lhs ++ ") <= (" ++ show rhs ++ ")"
-  show (FOEquiv    lhs rhs) = "(" ++ show lhs ++ ") <=> (" ++ show rhs ++ ")"
-  show (FONonEquiv lhs rhs) = "(" ++ show lhs ++ ") <~> (" ++ show rhs ++ ")"
+  show (FONot      form)    = "~ " ++ (parenIfNec form)
+  show (FOAnd      lhs rhs) = (parensIfNeed lhs) ++ " & " ++ (parensIfNeed rhs)
+    where parensIfNeed f = case f of FOAnd _ _ -> show f
+                                     _         -> parenIfNec f
+  show (FOOr       lhs rhs) = (parensIfNeed lhs) ++ " | " ++ (parensIfNeed rhs)
+    where parensIfNeed f = case f of FOOr _ _ -> show f
+                                     _        -> parenIfNec f
+  show (FONand     lhs rhs) = showBinary "~&"  lhs rhs
+  show (FONor      lhs rhs) = showBinary "~|"  lhs rhs
+  show (FOImplLR   lhs rhs) = showBinary "=>"  lhs rhs
+  show (FOImplRL   lhs rhs) = showBinary "<="  lhs rhs
+  show (FOEquiv    lhs rhs) = showBinary "<=>" lhs rhs
+  show (FONonEquiv lhs rhs) = showBinary "<~>" lhs rhs
   show (FOForAll vars form) = showQuant "!" vars form
   show (FOExists vars form) = showQuant "?" vars form
+
+-- shows a binary operator
+showBinary :: String     -- operator
+           -> FOFormula  -- left-hand side
+           -> FOFormula  -- right-hand side
+           -> String
+showBinary op lhs rhs = (parenIfNec lhs) ++ op ++ (parenIfNec rhs)
+
+-- adds parenthesis around a formula if needed, i.e., it is not an atom or a negation
+parenIfNec :: FOFormula
+           -> String
+parenIfNec f@(FOPred _ _) = show f
+parenIfNec f@(FONot _)    = show f
+parenIfNec f              = parenthesize f
+
+-- adds parenthesis around a formula
+parenthesize :: FOFormula
+              -> String
+parenthesize f = "(" ++ show f ++ ")"
 
 -- shows a quantified formula
 showQuant :: String      -- quantifier
@@ -120,7 +140,8 @@ test :: IO ()
 test = do
   tptp_file <- parseFile "../PUZ001+1.p"
   -- tptp_file <- parseFile "test/test1.p"
-  putStr $ show tptp_file
+  let str = show tptp_file
+  putStr $ show $ parseString str
 
 langDef = P.emptyDef{ P.commentStart = "/*"
                     , P.commentEnd = "*/"
